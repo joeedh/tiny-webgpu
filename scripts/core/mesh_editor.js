@@ -17,64 +17,6 @@ export class ToolModeBase {
     this.keymap = new KeyMap()
   }
 
-  draw(ctx, canvas, g) {
-    this.ctx = ctx;
-
-    let mesh = this.ctx.mesh;
-
-    let w = 8;
-
-    for (let e of mesh.edges.visible) {
-      g.strokeStyle = color2css(getElemColor(mesh.edges, e));
-      g.beginPath();
-      g.moveTo(e.v1[0], e.v1[1]);
-      g.lineTo(e.v2[0], e.v2[1]);
-      g.stroke();
-    }
-
-    for (let h of mesh.handles.visible) {
-      g.strokeStyle = color2css(getElemColor(mesh.handles, h));
-      let v = h.owner.vertex(h);
-
-      g.beginPath();
-      g.moveTo(v[0], v[1]);
-      g.lineTo(h[0], h[1]);
-      g.stroke();
-    }
-
-    for (let list of [mesh.verts, mesh.handles]) {
-      for (let v of list.visible) {
-        g.fillStyle = color2css(getElemColor(list, v));
-        g.beginPath();
-        g.rect(v[0] - w*0.5, v[1] - w*0.5, w, w);
-        g.fill();
-      }
-    }
-
-    for (let f of mesh.faces.visible) {
-      g.beginPath();
-      let color = new Vector4(getElemColor(mesh.faces, f));
-      color[3] = 0.15;
-
-      g.fillStyle = color2css(color);
-      for (let list of f.lists) {
-        let first = true;
-        for (let l of list) {
-          if (first) {
-            first = false;
-            g.moveTo(l.v[0], l.v[1]);
-          } else {
-            g.lineTo(l.v[0], l.v[1]);
-          }
-        }
-
-        g.closePath();
-      }
-
-      g.fill();
-    }
-  }
-
   getEditMenu() {
     return [];
   }
@@ -140,6 +82,65 @@ export class MeshEditor extends ToolModeBase {
     ])
 
     this.mdown = false;
+  }
+
+
+  draw(ctx, canvas, g) {
+    this.ctx = ctx;
+
+    let mesh = this.ctx.mesh;
+
+    let w = 8;
+
+    for (let e of mesh.edges.visible) {
+      g.strokeStyle = color2css(getElemColor(mesh.edges, e));
+      g.beginPath();
+      g.moveTo(e.v1[0], e.v1[1]);
+      g.lineTo(e.v2[0], e.v2[1]);
+      g.stroke();
+    }
+
+    for (let h of mesh.handles.visible) {
+      g.strokeStyle = color2css(getElemColor(mesh.handles, h));
+      let v = h.owner.vertex(h);
+
+      g.beginPath();
+      g.moveTo(v[0], v[1]);
+      g.lineTo(h[0], h[1]);
+      g.stroke();
+    }
+
+    for (let list of [mesh.verts, mesh.handles]) {
+      for (let v of list.visible) {
+        g.fillStyle = color2css(getElemColor(list, v));
+        g.beginPath();
+        g.rect(v[0] - w*0.5, v[1] - w*0.5, w, w);
+        g.fill();
+      }
+    }
+
+    for (let f of mesh.faces.visible) {
+      g.beginPath();
+      let color = new Vector4(getElemColor(mesh.faces, f));
+      color[3] = 0.15;
+
+      g.fillStyle = color2css(color);
+      for (let list of f.lists) {
+        let first = true;
+        for (let l of list) {
+          if (first) {
+            first = false;
+            g.moveTo(l.v[0], l.v[1]);
+          } else {
+            g.lineTo(l.v[0], l.v[1]);
+          }
+        }
+
+        g.closePath();
+      }
+
+      g.fill();
+    }
   }
 
   getEditMenu() {
