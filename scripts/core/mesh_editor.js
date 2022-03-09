@@ -16,7 +16,7 @@ export class ToolModeBase {
     this.ctx = ctx;
     this.keymap = new KeyMap()
   }
-  
+
   draw(ctx, canvas, g) {
     this.ctx = ctx;
 
