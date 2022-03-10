@@ -2,22 +2,12 @@ import {
   Vector2, Vector3, Vector4, Matrix4,
   Quat, util, math, nstructjs, BaseVector
 } from '../path.ux/pathux.js';
+import config from '../config/config.js';
 
 'use strict';
 
-export const MeshTypes = {
-  VERTEX  : 1,
-  EDGE    : 2,
-  HANDLE  : 4,
-  LOOP    : 8,
-  LOOPLIST: 16,
-  FACE    : 32
-}
-
-export const MeshFlags = {
-  SELECT: 1,
-  HIDE  : 2
-}
+export * from './mesh_base.js';
+import {MeshFlags, MeshFeatures, MeshTypes} from './mesh_base.js';
 
 const sel = [1, 0.8, 0, 1];
 const high = [1, 0.8, 0.7, 1]
@@ -313,8 +303,8 @@ export class Edge extends Element {
       v1: this.v1.eid,
       v2: this.v2.eid,
 
-      h1: this.h1.eid,
-      h2: this.h2.eid,
+      h1: this.h1 ? this.h1.eid : -1,
+      h2: this.h2 ? this.h2.eid : -1,
       l : this.l ? this.l.eid : -1
     });
   }
@@ -356,8 +346,8 @@ export class Edge extends Element {
 Edge.STRUCT = nstructjs.inherit(Edge, Element, "mesh.Edge") + `
   v1   : int | this.v1.eid;
   v2   : int | this.v2.eid;
-  h1   : int | this.h1.eid;
-  h2   : int | this.h2.eid;
+  h1   : int | this.h1 ? this.h1.eid : -1;
+  h2   : int | this.h2 ? this.h2.eid : -1;
   l    : int | this.l ? this.l.eid : -1;
 }`;
 nstructjs.register(Edge);
@@ -920,6 +910,16 @@ export class Mesh {
     this.elists = {};
 
     this.makeElists();
+
+    this.features = 0;
+
+    if (config.MESH_HANDLES) {
+      this.features |= MeshFeatures.HANDLES;
+    }
+  }
+
+  get haveHandles() {
+    return this.features & MeshFeatures.HANDLES;
   }
 
   get elements() {
@@ -1029,13 +1029,15 @@ export class Mesh {
     e.v1 = v1;
     e.v2 = v2;
 
-    e.h1 = this.makeHandle(v1);
-    e.h1.interp(v2, 1.0/2.0);
-    e.h1.owner = e;
+    if (this.features & MeshFeatures.HANDLES) {
+      e.h1 = this.makeHandle(v1);
+      e.h1.interp(v2, 1.0/2.0);
+      e.h1.owner = e;
 
-    e.h2 = this.makeHandle(v1);
-    e.h2.interp(v2, 2.0/3.0);
-    e.h2.owner = e;
+      e.h2 = this.makeHandle(v1);
+      e.h2.interp(v2, 2.0/3.0);
+      e.h2.owner = e;
+    }
 
     v1.edges.push(e);
     v2.edges.push(e);
@@ -1087,11 +1089,13 @@ export class Mesh {
     this.edges.remove(e);
     this.eidMap.delete(e.eid);
 
-    this.eidMap.delete(e.h1.eid);
-    this.handles.remove(e.h1);
+    if (this.features & MeshFeatures.HANDLES) {
+      this.eidMap.delete(e.h1.eid);
+      this.handles.remove(e.h1);
 
-    this.eidMap.delete(e.h2.eid);
-    this.handles.remove(e.h2);
+      this.eidMap.delete(e.h2.eid);
+      this.handles.remove(e.h2);
+    }
 
     e.eid = -1;
 
@@ -1255,6 +1259,8 @@ export class Mesh {
   selectFlush(selmode) {
     if (selmode & MeshTypes.VERTEX) {
       this.edges.selectNone();
+      this.faces.selectNone();
+
       let set_active = this.edges.active === undefined;
       set_active = set_active || !(this.edges.active && ((this.edges.active.v1.flag | this.edges.active.v2.flag) & MeshFlags.SELECT));
 
@@ -1262,8 +1268,10 @@ export class Mesh {
         if ((e.v1.flag & MeshFlags.SELECT) && (e.v2.flag & MeshFlags.SELECT)) {
           this.edges.setSelect(e, true);
 
-          this.handles.setSelect(e.h1, true);
-          this.handles.setSelect(e.h2, true);
+          if (this.features & MeshFeatures.HANDLES) {
+            this.handles.setSelect(e.h1, true);
+            this.handles.setSelect(e.h2, true);
+          }
 
           if (set_active) {
             this.edges.active = e;
@@ -1309,17 +1317,16 @@ export class Mesh {
 
     let vector = e.v1.length === 2 ? Vector2 : Vector3;
 
-    let h1 = new vector(e.h1);
-    let h2 = new vector(e.h2);
-
     //e.h.interp(e.v1, 1.0/3.0);
     //ne.h.load(h).interp(ne.v2, 0.5);
     //nv.interp(h, 0.5);
 
-    ne.h1.load(nv).interp(ne.v2, 1.0/3.0);
-    ne.h1.load(nv).interp(ne.v2, 2.0/3.0);
+    if (this.features & MeshFeatures.HANDLES) {
+      ne.h1.load(nv).interp(ne.v2, 1.0/3.0);
+      ne.h2.load(nv).interp(ne.v2, 2.0/3.0);
 
-    e.h2.load(e.v1).interp(nv, 2.0/3.0);
+      e.h2.load(e.v1).interp(nv, 2.0/3.0);
+    }
 
     if (e.flag & MeshFlags.SELECT) {
       this.edges.setSelect(ne, true);
@@ -1562,6 +1569,10 @@ export class Mesh {
       e.h2 = eidMap.get(e.h2);
       eloops.set(e, eidMap.get(e.l));
       e.l = undefined;
+
+      if (e.h1) {
+        this.features |= MeshFeatures.HANDLES;
+      }
     }
 
     for (let l of this.loops) {

@@ -76,7 +76,7 @@ export class App extends simple.AppState {
     }
 
     return super.saveFileSync([
-      this.mesh
+      this.mesh, this.properties
     ], args);
   }
 
@@ -92,8 +92,12 @@ export class App extends simple.AppState {
     }
 
     let file = super.loadFileSync(data, args);
+    console.log(file.objects);
+
     this.mesh = file.objects[0];
     this.properties = file.objects[1] ?? this.properties;
+
+    this.properties.patchTemplate(Properties);
 
     window.redraw_all();
 

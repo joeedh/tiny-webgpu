@@ -1,10 +1,12 @@
+import config from '../config/config.js';
+
 import {
   KeyMap, color2css, css2color,
   Vector3, Matrix4, Quat, util, nstructjs, math,
   Vector4, UIBase, HotKey, haveModal, Vector2
 } from '../path.ux/scripts/pathux.js';
 
-import {getElemColor, MeshTypes, MeshFlags} from './mesh.js';
+import {getElemColor, MeshTypes, MeshFlags, MeshFeatures} from './mesh.js';
 import './mesh_ops.js';
 import './transform_ops.js';
 import './mesh_selectops.js';
@@ -79,6 +81,8 @@ export class MeshEditor extends ToolModeBase {
       new HotKey("D", [], "mesh.dissolve_vertex()"),
       new HotKey("X", [], "mesh.delete()"),
       new HotKey("Delete", [], "mesh.delete()"),
+      new HotKey("L", [], "mesh.select_linked(pick=true mode='ADD')"),
+      new HotKey("L", ["SHIFT"], "mesh.select_linked(pick=true mode='SUB')"),
     ])
 
     this.mdown = false;
@@ -100,17 +104,24 @@ export class MeshEditor extends ToolModeBase {
       g.stroke();
     }
 
-    for (let h of mesh.handles.visible) {
-      g.strokeStyle = color2css(getElemColor(mesh.handles, h));
-      let v = h.owner.vertex(h);
+    if (mesh.haveHandles) {
+      for (let h of mesh.handles.visible) {
+        g.strokeStyle = color2css(getElemColor(mesh.handles, h));
+        let v = h.owner.vertex(h);
 
-      g.beginPath();
-      g.moveTo(v[0], v[1]);
-      g.lineTo(h[0], h[1]);
-      g.stroke();
+        g.beginPath();
+        g.moveTo(v[0], v[1]);
+        g.lineTo(h[0], h[1]);
+        g.stroke();
+      }
     }
 
-    for (let list of [mesh.verts, mesh.handles]) {
+    let vlists = [mesh.verts]
+    if (mesh.haveHandles) {
+      vlists.push(mesh.handles);
+    }
+
+    for (let list of vlists) {
       for (let v of list.visible) {
         g.fillStyle = color2css(getElemColor(list, v));
         g.beginPath();
@@ -155,7 +166,7 @@ export class MeshEditor extends ToolModeBase {
     return ret;
   }
 
-  pick(localX, localY, selmask = MeshTypes.VERTEX | MeshTypes.HANDLE, limit = 25) {
+  pick(localX, localY, selmask = config.SELECTMASK, limit = 25) {
     let mesh = this.ctx.mesh;
 
     let mpos = new Vector3();
@@ -170,6 +181,10 @@ export class MeshEditor extends ToolModeBase {
 
     let vlist = (list) => {
       for (let v of list) {
+        if (v.flag & MeshFlags.HIDE) {
+          continue;
+        }
+
         mpos[2] = v.length > 2 ? v[2] : 0.0;
 
         let dis = v.vectorDistance(mpos);
@@ -261,7 +276,16 @@ export class MeshEditor extends ToolModeBase {
     if (this.mdown) {
       let mesh = this.ctx.mesh;
 
-      let act = mesh.verts.selected.length > 0 || mesh.handles.selected.length > 0;
+      let act = false;
+      let selmask = this.ctx.selMask;
+
+      for (let elist of mesh.getElists()) {
+        if (!(elist.type & selmask)) {
+          continue;
+        }
+
+        act = act || elist.selected.length > 0;
+      }
 
       if (act && this.mpos.vectorDistance(this.startMpos) > 10) {
         this.mdown = false;

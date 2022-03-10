@@ -27,6 +27,8 @@ export class Workspace extends simple.Editor {
     this.canvas = document.createElement("canvas");
     this.g = this.canvas.getContext("2d");
 
+    this.mpos = new Vector2();
+
     this.toolmode = new MeshEditor();
     this.shadow.appendChild(this.canvas);
 
@@ -41,30 +43,41 @@ export class Workspace extends simple.Editor {
       return elem && elem !== this && elem !== this.canvas;
     }
 
+    this.addEventListener("pointerover", (e) => {
+      let mpos = this.getLocalMouse(e.x, e.y);
+      this.mpos.load(mpos);
+    });
+
     this.addEventListener("pointerdown", (e) => {
+      let mpos = this.getLocalMouse(e.x, e.y);
+      this.mpos.load(mpos);
+
       if (eventBad(e)) {
         return;
       }
 
-      let mpos = this.getLocalMouse(e.x, e.y);
       this.toolmode.on_mousedown(mpos[0], mpos[1], e);
     });
 
     this.addEventListener("pointermove", (e) => {
+      let mpos = this.getLocalMouse(e.x, e.y);
+      this.mpos.load(mpos);
+
       if (eventBad(e)) {
         return;
       }
 
-      let mpos = this.getLocalMouse(e.x, e.y);
       this.toolmode.on_mousemove(mpos[0], mpos[1], e);
     });
 
     this.addEventListener("pointerup", (e) => {
+      let mpos = this.getLocalMouse(e.x, e.y);
+      this.mpos.load(mpos);
+
       if (eventBad(e)) {
         return;
       }
 
-      let mpos = this.getLocalMouse(e.x, e.y);
       this.toolmode.on_mouseup(mpos[0], mpos[1], e);
     });
   }

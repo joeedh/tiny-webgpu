@@ -1,4 +1,8 @@
-import {BoolProperty, EnumProperty, FlagProperty, IntProperty, ToolOp} from '../path.ux/scripts/pathux.js';
+import config from '../config/config.js';
+
+import {
+  BoolProperty, EnumProperty, FlagProperty, FloatProperty, IntProperty, ToolOp
+} from '../path.ux/scripts/pathux.js';
 import {MeshFlags, MeshTypes} from './mesh.js';
 import {SelToolModes} from './mesh_ops.js';
 
@@ -13,11 +17,22 @@ export class SelectOpBase extends ToolOp {
     }
   }
 
+  static create(ctx, args) {
+    let tool = super.create(ctx, args);
+
+    if (!("selMask" in args)) {
+      tool.inputs.selMask.setValue(ctx.selMask);
+    }
+
+    return tool;
+  }
+
   undoPre(ctx) {
     this._undo = [];
 
     let mesh = ctx.mesh;
     let mask = this.inputs.selMask.getValue();
+
     for (let list of mesh.getElists()) {
       let data = {
         elems    : [],
@@ -94,7 +109,7 @@ export class SelectOneOp extends SelectOpBase {
     let tool = super.invoke(ctx, args);
 
     if (!("selMask" in args)) {
-      tool.inputs.selMask.setValue(MeshTypes.VERTEX | MeshTypes.HANDLE);
+      tool.inputs.selMask.setValue(ctx.selMask);
     }
 
     return tool;
@@ -134,7 +149,7 @@ export class ToggleSelectOp extends SelectOpBase {
       uiname  : "Select All/None",
       toolpath: "mesh.toggle_select_all",
       inputs  : ToolOp.inherit({
-        setActive : new BoolProperty(false)
+        setActive: new BoolProperty(false)
       }),
       outputs : ToolOp.inherit({}),
     }
@@ -188,6 +203,106 @@ export class ToggleSelectOp extends SelectOpBase {
         }
       }
     }
+
+    mesh.selectFlush(selMask);
   }
 }
+
 ToolOp.register(ToggleSelectOp);
+
+export class SelectLinked extends SelectOpBase {
+  static tooldef() {
+    return {
+      uiname  : "Select Linked",
+      toolpath: "mesh.select_linked",
+      inputs  : ToolOp.inherit({
+        pick    : new BoolProperty(false),
+        elemEid : new IntProperty(-1),
+        onlyElem: new BoolProperty(false),
+      }),
+      outputs : ToolOp.inherit({}),
+    }
+  }
+
+  static invoke(ctx, args) {
+    let tool = super.invoke(ctx, args);
+
+    if (tool.inputs.pick.getValue()) {
+      let workspace = ctx.workspace;
+      let elem = workspace.toolmode.pick(workspace.mpos[0], workspace.mpos[1], tool.inputs.selMask.getValue());
+
+      if (elem) {
+        switch (elem.type) {
+          case MeshTypes.HANDLE:
+            elem = elem.owner.v1;
+            break;
+          case MeshTypes.EDGE:
+            elem = elem.v1;
+            break;
+          case MeshTypes.FACE:
+            elem = elem.lists[0].l.v;
+            break;
+          case MeshTypes.LOOP:
+            elem = elem.v;
+            break;
+        }
+
+        tool.inputs.elemEid.setValue(elem.eid);
+        tool.inputs.onlyElem.setValue(true);
+      }
+    }
+
+    return tool;
+  }
+
+  exec(ctx) {
+    let visit = new WeakSet();
+    let stack = [];
+    let mesh = ctx.mesh;
+    let {selMask, mode, pick, onlyElem, elemEid} = this.getInputs();
+
+    let vs;
+
+    if (onlyElem && elemEid >= 0) {
+      let v = mesh.eidMap.get(elemEid);
+
+      if (!v || v.type !== MeshTypes.VERTEX) {
+        console.warn("Invalid element " + elemEid + "; got", v);
+        return;
+      } else {
+        vs = new Set([v]);
+      }
+    } else {
+      vs = new Set(mesh.verts.selected.editable);
+    }
+
+    for (let v of vs) {
+      if (visit.has(v)) {
+        continue;
+      }
+
+      stack.length = 0;
+      stack.push(v);
+      visit.add(v);
+
+      while (stack.length > 0) {
+        let v2 = stack.pop();
+
+        mesh.setSelect(v2, mode === SelToolModes.ADD);
+
+        for (let e of v2.edges) {
+          let v3 = e.otherVertex(v2);
+
+          if (!visit.has(v3)) {
+            visit.add(v3);
+            stack.push(v3);
+          }
+        }
+      }
+    }
+
+    mesh.selectFlush(selMask);
+  }
+}
+
+ToolOp.register(SelectLinked);

@@ -129,6 +129,8 @@ export class PropertiesBag {
         continue;
       }
 
+      def.on('change', window.redraw_all);
+
       if (item.onchange) {
         def.on('change', item.onchange);
       }
@@ -190,7 +192,7 @@ export class PropertiesBag {
 
     for (let prop of props) {
       let item = {};
-      templ[prop.apiname] = {};
+      templ[prop.apiname] = item;
 
       let type = PropTypeMap[prop.type];
 
@@ -200,7 +202,7 @@ export class PropertiesBag {
 
       item.type = type;
       item.uiName = prop.uiname;
-      item.value = prop.value;
+      item.value = prop.getValue();
 
       let pr = PropTypes;
       let numberTypes = pr.FLOAT | pr.INT | pr.VEC2 | pr.VEC3 | pr.VEC4;
@@ -230,12 +232,14 @@ export class PropertiesBag {
       prop.setValue(this[prop.apiname]);
     }
 
+    console.log("SAVE PROPS", util.list(this._props));
     return this._props;
   }
 
   loadSTRUCT(reader) {
+    reader(this);
+
     let templ = this.constructor.templateFromProps(this._props);
-    console.log("Template:", templ);
     this.loadTemplate(templ);
   }
 
@@ -249,10 +253,12 @@ export class PropertiesBag {
     return obj;
   }
 }
-simple.DataModel.register(PropertiesBag);
 PropertiesBag.STRUCT = `
+PropertiesBag {
   _props : array(abstract(ToolProperty)) | this._save();
+}
 `;
+simple.DataModel.register(PropertiesBag);
 
 export class PropsEditor extends Container {
   constructor() {

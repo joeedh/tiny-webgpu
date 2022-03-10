@@ -1,3 +1,5 @@
+import config from '../config/config.js';
+
 import {
   util, math, Vector2, Vector3, Vector4, Matrix4,
   nstructjs, ToolOp, IntProperty, FloatProperty,
@@ -76,7 +78,7 @@ export class TransformVert extends TransformElem {
   }
 
   static create(mesh, selMask) {
-    let list = new TransformList(this.transformDefine().typeName, MeshTypes.VERTEX | MeshTypes.HANDLE);
+    let list = new TransformList(this.transformDefine().typeName, selMask);
 
     let doList = (elist) => {
       for (let v of elist.selected.editable) {
@@ -88,7 +90,7 @@ export class TransformVert extends TransformElem {
       doList(mesh.verts);
     }
 
-    if (selMask & MeshTypes.HANDLE) {
+    if (mesh.haveHandles && (selMask & MeshTypes.HANDLE)) {
       doList(mesh.handles);
     }
 
@@ -170,7 +172,7 @@ export class TransformOp extends ToolOp {
   static tooldef() {
     return {
       inputs: {
-        selMask: new FlagProperty(MeshTypes.VERTEX | MeshTypes.HANDLE, MeshTypes),
+        selMask: new FlagProperty(config.SELECTMASK, MeshTypes),
         center : new VecProperty()
       }
     }

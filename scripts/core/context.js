@@ -1,3 +1,4 @@
+import config from '../config/config.js';
 
 /* Set default undo handlers; they just saves and reload the file
 *  minus the screen layout.*/
@@ -31,7 +32,7 @@ export class Context {
   }
 
   get selMask() {
-    return MeshTypes.VERTEX | MeshTypes.HANDLE;
+    return config.SELECTMASK;
   }
 
   get mesh() {

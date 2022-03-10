@@ -1,3 +1,5 @@
+import config from '../config/config.js';
+
 import {
   Vector2, Vector3, Vector4, util, math,
   nstructjs, Matrix4, Quat, ToolOp,
@@ -46,9 +48,9 @@ export class MeshOp extends ToolOp {
 export class SplitEdgeOp extends MeshOp {
   static tooldef() {
     return {
-      uiname : "Split Edge",
-      toolpath : "mesh.split_edge",
-      inputs : ToolOp.inherit({})
+      uiname  : "Split Edge",
+      toolpath: "mesh.split_edge",
+      inputs  : ToolOp.inherit({})
     }
   }
 
@@ -60,15 +62,16 @@ export class SplitEdgeOp extends MeshOp {
     }
   }
 }
+
 ToolOp.register(SplitEdgeOp);
 
 
 export class DissolveVertOp extends MeshOp {
   static tooldef() {
     return {
-      uiname : "Dissolve Vertex",
-      toolpath : "mesh.dissolve_vertex",
-      inputs : ToolOp.inherit({})
+      uiname  : "Dissolve Vertex",
+      toolpath: "mesh.dissolve_vertex",
+      inputs  : ToolOp.inherit({})
     }
   }
 
@@ -80,16 +83,17 @@ export class DissolveVertOp extends MeshOp {
     }
   }
 }
+
 ToolOp.register(DissolveVertOp);
 
 
 export class DeleteOp extends MeshOp {
   static tooldef() {
     return {
-      uiname : "Delete",
-      toolpath : "mesh.delete",
-      inputs : ToolOp.inherit({
-        selMask : new FlagProperty(MeshTypes.HANDLE|MeshTypes.VERTEX, MeshTypes)
+      uiname  : "Delete",
+      toolpath: "mesh.delete",
+      inputs  : ToolOp.inherit({
+        selMask: new FlagProperty(config.SELECTMASK, MeshTypes)
       })
     }
   }
@@ -130,4 +134,5 @@ export class DeleteOp extends MeshOp {
     }
   }
 }
+
 ToolOp.register(DeleteOp);
