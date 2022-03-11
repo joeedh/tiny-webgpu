@@ -1392,6 +1392,37 @@ export class Mesh {
     return [ne, nv];
   }
 
+  copyElemData(dst, src) {
+    this.setSelect(dst, src.flag & MeshFlags.SELECT);
+    dst.flag = src.flag;
+
+    if (dst instanceof Vertex) {
+      dst.load(src)
+    }
+  }
+
+  reverseWinding(f) {
+    for (let list of f.lists) {
+      for (let l of list) {
+        this.radialLoopRemove(l.e, l);
+      }
+    }
+
+    for (let list of f.lists) {
+      for (let l of new Set(list.loops)) {
+        let t = l.next;
+        l.next = l.prev;
+        l.prev = t;
+      }
+    }
+
+    for (let list of f.lists) {
+      for (let l of list) {
+        this.radialLoopInsert(l.e, l);
+      }
+    }
+  }
+
   clearHighlight() {
     let exist = this.hasHighlight;
 

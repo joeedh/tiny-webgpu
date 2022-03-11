@@ -4,7 +4,7 @@ import {
   Vector2, Vector3, Vector4, util, math,
   nstructjs, Matrix4, Quat, ToolOp,
   FloatProperty, BoolProperty, IntProperty,
-  EnumProperty, FlagProperty
+  EnumProperty, FlagProperty, Vec3Property
 } from '../path.ux/pathux.js';
 import {Mesh, MeshFlags, MeshTypes} from './mesh.js';
 
@@ -136,3 +136,158 @@ export class DeleteOp extends MeshOp {
 }
 
 ToolOp.register(DeleteOp);
+
+
+export class TriangulateOp extends MeshOp {
+  static tooldef() {
+    return {
+      uiname  : "Triangulate",
+      toolpath: "mesh.triangulate",
+      inputs  : ToolOp.inherit({})
+    }
+  }
+
+  exec(ctx) {
+    let mesh = ctx.mesh;
+
+    mesh.triangulate();
+    window.redraw_all();
+  }
+}
+
+ToolOp.register(TriangulateOp);
+
+export class ExtrudeVertOp extends MeshOp {
+  static tooldef() {
+    return {
+      uiname  : "Extrude Vertex",
+      toolpath: "mesh.extrude_vertex",
+      inputs  : ToolOp.inherit({
+        co : new Vec3Property()
+      })
+    }
+  }
+
+  exec(ctx) {
+    let mesh = ctx.mesh;
+
+    let {co} = this.getInputs();
+    let actv = mesh.verts.active;
+
+    let v = mesh.makeVertex(co);
+    let ne;
+
+    if (actv && (actv.flag & MeshFlags.SELECT)) {
+      ne = mesh.makeEdge(v, actv);
+    }
+
+    mesh.selectNone();
+
+    mesh.verts.setSelect(v, true);
+    mesh.verts.active = v;
+
+    if (ne) {
+      mesh.edges.setSelect(ne, true);
+      mesh.edges.active = ne;
+    }
+
+    window.redraw_all();
+  }
+}
+ToolOp.register(ExtrudeVertOp);
+
+
+export class MakeFaceOp extends MeshOp {
+  static tooldef() {
+    return {
+      uiname  : "Make Face",
+      toolpath: "mesh.make_face",
+      inputs  : ToolOp.inherit({
+        co : new Vec3Property()
+      })
+    }
+  }
+
+  exec(ctx) {
+    let mesh = ctx.mesh;
+
+    let vs = util.list(mesh.verts.selected.editable);
+    vs = vs.sort((a, b) => a.edges.length - b.edges.length);
+    vs = new Set(vs);
+
+    let segs = [];
+    let visit = new WeakSet();
+
+    for (let v of vs) {
+      if (visit.has(v)) {
+        continue;
+      }
+
+      let v2 = v;
+      let seg = [v];
+
+      segs.push(seg);
+
+      let _i = 0;
+      while (1) {
+        let newe;
+
+        for (let e of v2.edges) {
+          let v3 = e.otherVertex(v2);
+
+          if (vs.has(v3) && !visit.has(e)) {
+            newe = e;
+            break;
+          }
+        }
+
+        if (!newe) {
+          break;
+        }
+
+        visit.add(newe);
+
+        v2 = newe.otherVertex(v2);
+        visit.add(v2);
+        seg.push(v2);
+
+        if (_i++ > 10000) {
+          console.error("Infinite loop error!");
+          break;
+        }
+
+      }
+    }
+
+    for (let seg of segs) {
+      let f = mesh.makeFace(seg);
+
+      let rev = false;
+
+      for (let l of f.loops) {
+        if (l.radial_next !== l && l.radial_next.v === l.v) {
+          rev = true;
+          break;
+        }
+      }
+
+      if (rev) {
+        mesh.reverseWinding(f);
+      }
+
+      for (let l of f.loops) {
+        if (l.radial_next === l) {
+          continue;
+        }
+
+        let l2 = l.radial_next;
+        if (l2.v === l.v) {
+          l2 = l2.next;
+        }
+
+        mesh.copyElemData(l, l2);
+      }
+    }
+  }
+}
+ToolOp.register(MakeFaceOp);

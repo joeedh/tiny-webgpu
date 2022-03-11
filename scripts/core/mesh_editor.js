@@ -83,6 +83,7 @@ export class MeshEditor extends ToolModeBase {
       new HotKey("Delete", [], "mesh.delete()"),
       new HotKey("L", [], "mesh.select_linked(pick=true mode='ADD')"),
       new HotKey("L", ["SHIFT"], "mesh.select_linked(pick=true mode='SUB')"),
+      new HotKey("F", [], "mesh.make_face"),
     ])
 
     this.mdown = false;
@@ -211,7 +212,7 @@ export class MeshEditor extends ToolModeBase {
   }
 
   on_mousedown(localX, localY, e) {
-    this.mdown = true;
+    this.mdown = e.button === 0;
     this.startMpos.loadXY(localX, localY);
 
     this.updateHighlight(localX, localY);
@@ -243,6 +244,14 @@ export class MeshEditor extends ToolModeBase {
         unique : !e.shiftKey,
         elemEid: elem.eid,
       });
+    } else if (e.button === 0 && config.ENABLE_EXTRUDE) {
+      let co = new Vector3([localX, localY, 0]);
+
+      this.ctx.api.execTool(this.ctx, "mesh.extrude_vertex", {
+        co
+      });
+
+      this.updateHighlight(localX, localY);
     }
   }
 

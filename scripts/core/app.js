@@ -1,5 +1,5 @@
 import {
-  simple, util, Vector2, Vector3, Matrix4, math, ToolOp, PropTypes, NumberConstraints
+  simple, util, Vector2, Vector3, Matrix4, math, ToolOp, PropTypes, NumberConstraints, TextBoxBase
 } from '../path.ux/pathux.js';
 
 import './editor.js';
@@ -15,6 +15,20 @@ export const Properties = {
   steps  : {type: "int", value: 1, min: 0, max: 10, slideSpeed : 5},
   boolVal: {type: "bool", value: true},
 };
+
+window.addEventListener("contextmenu", (e) => {
+  console.log(e);
+
+  if (window._appstate && _appstate.screen) {
+    let elem = _appstate.screen.pickElement(e.x, e.y);
+
+    if (elem instanceof TextBoxBase || elem.tagName === "INPUT") {
+      return;
+    }
+  }
+  e.preventDefault();
+});
+
 
 export class App extends simple.AppState {
   constructor() {
