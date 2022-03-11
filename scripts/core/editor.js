@@ -1,4 +1,7 @@
-import {simple, nstructjs, util, math, Vector2, UIBase, Icons, KeyMap, haveModal, ToolOp} from '../path.ux/pathux.js';
+import {
+  simple, nstructjs, util, math, Vector2, UIBase, Icons, KeyMap, haveModal, ToolOp, ToolClasses, HotKey, createMenu,
+  startMenu
+} from '../path.ux/pathux.js';
 import {getElemColor} from './mesh.js';
 import {MeshEditor} from './mesh_editor.js';
 
@@ -33,6 +36,23 @@ export class Workspace extends simple.Editor {
     this.shadow.appendChild(this.canvas);
 
     this.keymap = new KeyMap();
+
+    this.keymap.add(new HotKey("Space", [], () => {
+      let menu = [];
+
+      for (let cls of ToolClasses) {
+        let def = cls.tooldef();
+
+        menu.push(def.toolpath);
+      }
+
+      menu = createMenu(this.ctx, "Find Tool", menu);
+
+      let mpos = this.ctx.screen.mpos;
+      startMenu(menu, mpos[0], mpos[1], true);
+
+      console.log(menu);
+    }));
 
     let eventBad = (e) => {
       if (haveModal()) {

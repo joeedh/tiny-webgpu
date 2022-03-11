@@ -291,3 +291,44 @@ export class MakeFaceOp extends MeshOp {
   }
 }
 ToolOp.register(MakeFaceOp);
+
+export class FixWindingsOp extends MeshOp {
+  static tooldef() {
+    return {
+      uiname : "Fix Windings",
+      toolpath : "mesh.fix_windings",
+      inputs : ToolOp.inherit({})
+    }
+  }
+
+  exec(ctx) {
+    let mesh = ctx.mesh;
+
+    for (let f of mesh.faces.selected.editable) {
+      let l = f.lists[0].l;
+
+      if (math.normal_tri(l.v, l.next.v, l.next.next.v)[2] < 0.0) {
+        mesh.reverseWinding(f);
+        console.log(f.eid, f);
+      }
+    }
+  }
+}
+ToolOp.register(FixWindingsOp);
+
+export class FixMeshOp extends MeshOp {
+  static tooldef() {
+    return {
+      uiname : "Fix Mesh",
+      toolpath : "mesh.repair",
+      inputs : ToolOp.inherit({})
+    }
+  }
+
+  exec(ctx) {
+    let mesh = ctx.mesh;
+
+    mesh.validate();
+  }
+}
+ToolOp.register(FixMeshOp);

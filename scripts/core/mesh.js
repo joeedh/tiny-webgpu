@@ -406,7 +406,7 @@ nstructjs.register(Loop);
 
 export class LoopListIter {
   constructor() {
-    this.ret = {done : false, value : undefined};
+    this.ret = {done: false, value: undefined};
     this.stack = undefined;
     this.l = undefined;
     this.list = undefined;
@@ -473,7 +473,7 @@ export class LoopListIter {
 
 let loopstack = new Array(1024);
 loopstack.cur = 0;
-for (let i=0; i<loopstack.length; i++) {
+for (let i = 0; i < loopstack.length; i++) {
   loopstack[i] = new LoopListIter();
 }
 
@@ -1023,6 +1023,16 @@ export class Mesh {
     return undefined;
   }
 
+  ensureEdge(v1, v2) {
+    let e = this.getEdge(v1, v2);
+
+    if (!e) {
+      e = this.makeEdge(v1, v2);
+    }
+
+    return e;
+  }
+
   makeEdge(v1, v2) {
     let e = new Edge();
 
@@ -1401,6 +1411,40 @@ export class Mesh {
     }
   }
 
+  validate() {
+    let ls = new Set();
+
+    for (let f of this.faces) {
+      for (let l of f.loops) {
+        ls.add(l);
+      }
+    }
+
+    for (let l of ls) {
+      this.radialLoopRemove(l.e, l);
+    }
+
+    for (let l of this.loops) {
+      if (!ls.has(l)) {
+        console.warn("Orphaned loop");
+        this._killLoop(l);
+      }
+    }
+
+    for (let l of ls) {
+      let e = l.e;
+      l.e = this.ensureEdge(l.v, l.next.v);
+
+      if (l.e !== e) {
+        console.warn("Loop had wrong edge");
+      }
+
+      this.radialLoopInsert(l.e, l);
+    }
+
+    this.structureGen++;
+  }
+
   reverseWinding(f) {
     for (let list of f.lists) {
       for (let l of list) {
@@ -1409,10 +1453,22 @@ export class Mesh {
     }
 
     for (let list of f.lists) {
-      for (let l of new Set(list.loops)) {
+      let es = [];
+
+      let ls = [];
+      for (let l of new Set(list)) {
         let t = l.next;
         l.next = l.prev;
         l.prev = t;
+
+        es.push(l.e);
+        ls.push(l);
+      }
+
+      let i = 0;
+      for (let l of ls) {
+        l.e = es[(i - 1 + es.length)%es.length];
+        i++;
       }
     }
 
@@ -1422,6 +1478,7 @@ export class Mesh {
       }
     }
   }
+
 
   clearHighlight() {
     let exist = this.hasHighlight;
@@ -1441,7 +1498,7 @@ export class Mesh {
     }
   }
 
-  linkFace(f, forceRelink=true) {
+  linkFace(f, forceRelink = true) {
     for (let list of f.lists) {
       for (let l of list) {
         if (forceRelink || !l.e) {
