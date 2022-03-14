@@ -4,6 +4,8 @@ import {
 } from '../path.ux/pathux.js';
 import {getElemColor} from './mesh.js';
 import {MeshEditor} from './mesh_editor.js';
+import {GPUMesh} from '../webgpu/webgpu.js';
+import {Shaders} from '../webgpu/shaders.js';
 
 export class LoadDefaultsOp extends ToolOp {
   static tooldef() {
@@ -140,6 +142,20 @@ export class Workspace extends simple.Editor {
 
   getKeyMaps() {
     return [this.keymap, this.toolmode.keymap];
+  }
+
+  async drawGPU(gpu) {
+    let mesh = new GPUMesh();
+    mesh.length = 3;
+
+    mesh.addLayer("co", "float", 2, [
+      0,0, 0,1, 1,1
+    ]);
+    mesh.addLayer("uv", "float", 2, [
+      0,0, 0,1, 1,1
+    ]);
+
+    await mesh.draw(gpu, Shaders.BasicShader);
   }
 
   init() {

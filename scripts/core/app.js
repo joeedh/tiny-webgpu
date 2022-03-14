@@ -8,8 +8,12 @@ import {Workspace} from './editor.js';
 import {FileArgs} from '../path.ux/scripts/simple/file.js';
 import {PropertiesBag} from './property_templ.js';
 import {Context} from './context.js';
+import {initWebGPU} from '../webgpu/webgpu.js';
+import {loadShaders} from '../webgpu/shaders.js';
 
-export const STARTUP_FILE_KEY = "_startup_file_1";
+import '../webgpu/preprocessor.js';
+
+export const STARTUP_FILE_KEY = "_startup_file_webgpu";
 
 export const Properties = {
   steps  : {type: "int", value: 1, min: 0, max: 10, slideSpeed : 5},
@@ -33,6 +37,9 @@ window.addEventListener("contextmenu", (e) => {
 export class App extends simple.AppState {
   constructor() {
     super(Context);
+
+    this.gpu = undefined;
+    this.gpuReady = false;
 
     this.mesh = undefined;
     this.properties = undefined;
@@ -118,6 +125,12 @@ export class App extends simple.AppState {
     return file;
   }
 
+  initGPU(gpu) {
+    this.gpuReady = true;
+    this.gpu = gpu;
+    loadShaders(gpu);
+  }
+
   loadFile(data, args = {}) {
     return new Promise((accept, reject) => {
       accept(this.loadFileSync(data, args));
@@ -125,10 +138,24 @@ export class App extends simple.AppState {
   }
 
   draw() {
+    if (this.gpuReady) {
+      this.gpu.beginFrame({
+        loadColor : [1, 0.8, 0.7, 1]
+      });
+    }
+
     for (let sarea of this.screen.sareas) {
       if (sarea.area && sarea.area.draw) {
+        if (this.gpuReady && sarea.area.drawGPU) {
+          sarea.area.drawGPU(this.gpu);
+        }
+
         sarea.area.draw();
       }
+    }
+
+    if (this.gpuReady) {
+      this.gpu.endFrame();
     }
   }
 
@@ -145,6 +172,12 @@ export class App extends simple.AppState {
 
 export function start() {
   console.log("start!");
+
+  initWebGPU({}).then((gpu) => {
+    window._gpu = gpu;
+    _appstate.initGPU(gpu);
+    window.redraw_all();
+  })
 
   let animreq = undefined;
 
