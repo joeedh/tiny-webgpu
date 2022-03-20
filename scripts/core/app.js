@@ -137,28 +137,6 @@ export class App extends simple.AppState {
     });
   }
 
-  draw() {
-    if (this.gpuReady) {
-      this.gpu.beginFrame({
-        loadColor: [1, 0.8, 0.7, 1]
-      });
-    }
-
-    for (let sarea of this.screen.sareas) {
-      if (sarea.area && sarea.area.draw) {
-        if (this.gpuReady && sarea.area.drawGPU) {
-          sarea.area.drawGPU(this.gpu);
-        }
-
-        sarea.area.draw();
-      }
-    }
-
-    if (this.gpuReady) {
-      this.gpu.endFrame();
-    }
-  }
-
   start() {
     super.start({
       DEBUG: {
@@ -182,17 +160,28 @@ export function start() {
   let animreq;
 
   function dodraw() {
-    if (!window._appstate) {
+    if (!window._appstate || !window._appstate.screen) {
       return;
     }
 
+    let screen = _appstate.screen;
     let gpu = !_appstate.gpuReady ? undefined : _appstate.gpu;
 
     if (gpu) {
+      for (let sarea of screen.sareas) {
+        if (gpu && sarea.area.drawGPU) {
+          try {
+            sarea.area.drawGPUPre(gpu);
+          } catch (error) {
+            console.error("ERROR", error);
+            util.print_stack(error);
+          }
+        }
+      }
+
       gpu.beginFrame({loadColor: [1, 0.8, 0.7, 1]});
     }
 
-    let screen = _appstate.screen;
     for (let sarea of screen.sareas) {
       if (sarea.area.draw) {
         try {

@@ -3,7 +3,9 @@ import {scriptManger} from './preprocessor.js';
 
 export const BasicUniforms = {
   label           : "basic uniforms",
-  projectionMatrix: "mat4",
+
+  projectionMatrix: "mat4x4",
+  color0          : "vec4",
 };
 
 export const Fragments = {
@@ -16,18 +18,30 @@ struct VertexInputs {
    @location(1) uv: vec4<f32>;
 }
 
+struct VertexOutputs {
+  @builtin(position) pos: vec4<f32>;
+  @location(0) uv: vec4<f32>;
+}
+
 #if 1
 #endif
   `,
   vertex    : `
-    fn vertexMain(vinput: VertexInputs) -> @builtin(position) vec4<f32> {
-        return vec4(vinput.co*2.0 - 1.0, 0.0, 1.0);
+    fn vertexMain(vinput: VertexInputs) -> VertexOutputs {
+        var out: VertexOutputs;
+         
+        out.pos = vec4(vinput.co*2.0 - 1.0, 0.0, 1.0);
+        out.uv = vinput.uv;
+        
+        return out;
     }
   `,
   fragment  : `
-    fn fragmentMain() -> @location(0) vec4<f32> {
+
+    fn fragmentMain(vinput: VertexOutputs) -> @location(0) vec4<f32> {
 #ifndef RED
-        return vec4(1.0, 1.0, 0.0, 1.0);
+        
+        return vec4(color0[0], color2[1], color[2], 1.0);//*0.5 + 0.5*vec4(vinput.uv[0], vinput.uv[1], 0.0, 1.0);
 #else
         return vec4(1.0, 0.0, 0.0, 1.0);
 #endif
@@ -39,8 +53,10 @@ struct VertexInputs {
   },
   uniforms  : {
     label: "BasicShader uniforms",
+
     BasicUniforms,
-    color: "vec4"
+    color: "vec4",
+    color2: "vec4",
   },
   defines   : {}
 };

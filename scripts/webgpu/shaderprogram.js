@@ -46,6 +46,16 @@ export class UniformsBlock {
   async initBindBlocks(gpu) {
     this.blockSize = 0;
 
+    let layout = {
+      binding   : gpuBindIdgen.next(),
+      visibility: ShaderProgram.VERTEX | ShaderProgram.FRAGMENT,
+      buffer    : {
+        label           : this.id,
+        hasDynamicOffset: false, //false is default
+        type            : "uniform",
+      }
+    };
+
     for (let block of this.bindBlocks) {
       if (block[BindBlock]) {
         continue;
@@ -55,9 +65,9 @@ export class UniformsBlock {
         binding   : gpuBindIdgen.next(),
         visibility: block.visibility ?? (ShaderProgram.VERTEX | ShaderProgram.FRAGMENT),
         buffer    : {
+          label           : block.label,
           hasDynamicOffset: false, //false is default
           type            : "uniform",
-          label           : block.label,
         }
       };
 
@@ -82,7 +92,8 @@ export class UniformsBlock {
           if (Array.isArray(v)) {
             map[k] = {
               offset: cur*4,
-              size  : v.length
+              size  : v.length,
+              type  : block[k],
             };
 
             cur += v.length;
@@ -145,12 +156,16 @@ export class UniformsBlock {
       usage           : GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
-    this.tempBuffer = gpu.device.createBuffer({
-      label           : "Shader Uniform Temp Block",
-      size            : this.blockSize,
-      mappedAtCreation: true,
-      usage           : GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC,
-    });
+    if (0) {
+      this.tempBuffer = gpu.device.createBuffer({
+        label           : "Shader Uniform Temp Block",
+        size            : this.blockSize,
+        mappedAtCreation: true,
+        usage           : GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC,
+      });
+    } else {
+      this.tempBuffer = new ArrayBuffer(this.blockSize);
+    }
 
     for (let block of this.bindBlocks) {
       let bind = block[BindBlock];
@@ -165,8 +180,11 @@ export class UniformsBlock {
       };
 
       let map = block[BlockMap];
+
       for (let k in map) {
         this.lookup[k] = {
+          group      : 0,
+          binding    : bind.layout.binding,
           offset     : offset + map[k].offset,
           size       : map[k].size,
           cachedValue: new Array(map[k].size),
@@ -219,8 +237,9 @@ export class UniformsBlock {
     let checkMapping = (key) => {
       let v = this.lookup[key];
       if (!v.value) {
-        v.value = this.tempBuffer.getMappedRange(v.offset, v.size*4);
-        v.value = new Float32Array(v.value, 0, v.size*4);
+        v.value = new Float32Array(this.tempBuffer, v.offset, v.size);
+        //v.value = this.tempBuffer.getMappedRange(v.offset, v.size*4);
+        //v.value = new Float32Array(v.value, 0, v.size);
       }
     }
 
@@ -257,31 +276,40 @@ export class UniformsBlock {
         checkMapping(key);
         target[key].cachedValue.set(value);
         target[key].value.set(value);
+
+        return true;
       },
+
       ownKeys(target) {
         return Object.keys(target);
       }
     });
   }
 
-  bind() {
-    return this.tempBuffer.mapAsync(GPUMapMode.WRITE, 0, this.blockSize);
+  bind(gpu) {
+    /*
+    this.tempBuffer = gpu.device.createBuffer({
+      label           : "Shader Uniform Temp Block",
+      size            : this.blockSize,
+      mappedAtCreation: true,
+      usage           : GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC,
+    });//*/
   }
 
   pushCopyCommand(gpu) {
-    if (gpu.commandEncoder) {
-      gpu.commandEncoder.copyBufferToBuffer(this.tempBuffer, 0, this.buffer, 0, this.blockSize);
-    }
+    let buf = this.tempBuffer;
+    gpu.device.queue.writeBuffer(this.buffer, 0, buf, 0, this.blockSize);
   }
 
-  async unmap(gpu) {
+  unmap(gpu) {
     for (let k in this.lookup) {
       let v = this.lookup[k];
 
       v.value = undefined;
     }
 
-    this.tempBuffer.unmap();
+
+    //this.tempBuffer.unmap();
   }
 }
 
@@ -414,12 +442,26 @@ export class ShaderProgramBase {
     return this.attrLocs[key];
   }
 
-  async bind(gpu, uniforms, pushUniformsCopy=true) {
+  bindUniforms(gpu, uniforms, pushCopyCommand = true) {
+    this.uniformBlock.bind(gpu);
+
+    for (let k in uniforms) {
+      //apply to uniforms Proxy
+      this.uniforms[k] = uniforms[k];
+    }
+
+    this.uniformBlock.unmap();
+    if (pushCopyCommand) {
+      this.uniformBlock.pushCopyCommand(gpu);
+    }
+  }
+
+  async bind(gpu, uniforms, pushUniformsCopy = true) {
     if (!this.ready) {
       await this.init(gpu);
     }
 
-    await this.uniformBlock.bind();
+    await this.uniformBlock.bind(gpu);
 
     for (let k in uniforms) {
       //apply to uniforms Proxy
@@ -433,6 +475,89 @@ export class ShaderProgramBase {
     }
   }
 
+  doUniformBindings(code) {
+    let s = '';
+
+    let ublock = this.uniformBlock;
+    let blocki = 0;
+
+    let defs = [];
+    let ki = 0;
+
+    for (let block of ublock.bindBlocks) {
+      console.error(block);
+      let binding = block[BindBlock].layout.binding;
+      let layout = block[BlockMap];
+
+      s += `struct Uniforms${blocki} {\n`;
+
+      let keys = Object.keys(layout).sort((a, b) => layout[a].offset - layout[b].offset);
+      for (let i = 0; i < keys.length; i++) {
+        let k = keys[i];
+        let v = layout[k];
+
+        let k2 = `_${k}_`;
+
+        s += `  ${k2}: ${v.type}<f32>;\n`;
+
+        let re = new RegExp(`\\b${k}\\b`, "g");
+
+        defs.push([re, `uniforms${blocki}.${k2}`]);
+      }
+      s += '}\n';
+
+      s += `@group(0) @binding(${binding}) `;
+      s += `var<uniform> uniforms${blocki} : Uniforms${blocki};\n`;
+
+      console.error(keys);
+
+      blocki++;
+      s += "\n";
+    }
+
+    console.error(defs);
+
+    for (let [re, repl] of defs) {
+      code = code.replace(re, repl);
+    }
+
+    code = s + "\n" + code;
+
+    console.error(code);
+    return code;
+  }
+
+  doUniformBindings_old(code) {
+    let lines = code.split("\n");
+    let s = '';
+    let ublock = this.uniformBlock;
+
+    for (let l of lines) {
+      let l2 = l.trim();
+
+      if (l2.startsWith("UNIFORM")) {
+        let i1 = "UNIFORM".length + 1;
+        let i2 = l2.search(":");
+
+        let name = l2.slice(i1, i2).trim();
+        if (!(name in ublock.lookup)) {
+          throw new Error(`Uniform ${name} is not in shader uniform list`);
+        }
+
+        let lk = ublock.lookup[name];
+        console.log("LOOKUP", name, lk);
+
+        let rest = l2.slice(i1, l2.length).trim();
+
+        let binding = lk.binding;
+        l = `@group(${lk.group}) @binding(${binding}) var<uniform> ${rest}`;
+      }
+      s += l + "\n";
+    }
+
+    return s;
+  }
+
   async init(gpu) {
     /* initialize uniforms block */
     await this.uniformBlock.initBindBlocks(gpu);
@@ -441,10 +566,13 @@ export class ShaderProgramBase {
     this.uniforms = this.uniformBlock.getProxy(false);
     await this.uniformBlock.unmap();
 
-    this.pipelineLayout = gpu.device.createPipelineLayout({
-      label : this.id,
+    let descr = {
+      label           : this.id,
       bindGroupLayouts: [this.uniformBlock.bindGroupLayout]
-    });
+    };
+    this.pipelineLayout = gpu.device.createPipelineLayout(descr);
+
+    console.log("LAYOUT", this.pipelineLayout, descr);
 
     let code = `
  ${this.declSource}      
@@ -453,6 +581,10 @@ export class ShaderProgramBase {
  @stage(fragment)
  ${this.fragmentSource}
       `.trim() + "\n";
+
+    code = this.doUniformBindings(code);
+
+    console.log(code);
 
     this.shaderModule = gpu.device.createShaderModule({
       label: this.label,
@@ -471,6 +603,6 @@ export class ShaderProgramBase {
   }
 }
 
-ShaderProgram.VERTEX = 0x1;
-ShaderProgram.FRAGMENT = 0x2;
-ShaderProgram.COMPUTE = 0x4;
+ShaderProgram.VERTEX = GPUShaderStage.VERTEX;
+ShaderProgram.FRAGMENT = GPUShaderStage.FRAGMENT;
+ShaderProgram.COMPUTE = GPUShaderStage.COMPUTE;

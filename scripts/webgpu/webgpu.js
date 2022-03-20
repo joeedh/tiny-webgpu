@@ -231,10 +231,19 @@ export class GPUMesh {
     return "shader" + shader.id;
   }
 
+  drawPre(gpu, shader, uniforms) {
+    if (!this.checkReady(gpu, shader, uniforms)) {
+      return;
+    }
+
+    shader = shader.getBaseShaderSync();
+    shader.bindUniforms(gpu, uniforms, true);
+  }
+
   draw(gpu, shader) {
     let pass = gpu.pass;
     let pipeline = this.pipelines.get(this._shaderkey(shader));
-    
+
     shader = shader.getBaseShaderSync();
 
     console.log("Draw!", pipeline);
@@ -311,11 +320,6 @@ export class RenderPipeline {
     this.primitiveType = primitiveType;
     this.constants = constants;
     this.buffers = buffers;
-  }
-
-  async bind(gpu, uniforms) {
-    await this.fshader.bind(gpu, uniforms);
-    await this.vshader.bind(gpu, uniforms);
   }
 
   destroy() {
@@ -397,15 +401,10 @@ export class WebGPUContext {
   }
 
   async createRenderPipeline(vshader, fshader, primitiveType, uniforms = {}, constants = {}, vbuffers = []) {
-    await vshader.bind(this, uniforms);
-
-    if (fshader !== vshader) {
-      await fshader.bind(this, uniforms);
-    }
-
     console.log("FSHADER", fshader);
 
     let pipeline = this.device.createRenderPipeline({
+      layout : fshader.getBaseShaderSync().pipelineLayout,
       vertex: {
         module    : vshader.shaderModule,
         entryPoint: "vertexMain",
@@ -425,6 +424,7 @@ export class WebGPUContext {
       }
     });
 
+    //pass.setBindGroup(0, shader.uniformBlock.bindGroup);
     return new RenderPipeline(pipeline, vshader, fshader, primitiveType, constants, vbuffers);
   }
 

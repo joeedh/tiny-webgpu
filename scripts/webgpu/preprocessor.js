@@ -141,6 +141,7 @@ let tokdef = [
   tk("JOIN", /##/),
   tk("WS", /[ \t]+/, t => undefined), //drop token
   tk("STRLIT", /"[^"]*"/, t => doStrLit(t)),
+  tk("DOT", /\./),
 ];
 
 export class FragmentManager {
@@ -180,6 +181,20 @@ export class FragmentManager {
 
 export const scriptManger = new FragmentManager();
 
+let recache = {};
+function getDefRe(key) {
+  if (key in recache) {
+    return recache[key];
+  }
+
+  let bound = "\\b";
+
+  let re = bound + key + bound;
+
+  recache[key] = new RegExp(re, "g");
+  return recache[key];
+}
+
 export class Preprocessor {
   constructor(scripts = scriptManger) {
     this.manager = scripts;
@@ -187,6 +202,34 @@ export class Preprocessor {
     this.ifstack = [];
     this.excluded = false;
     this.wasElif = false;
+  }
+
+  doMacroReplace(l, depth=0) {
+    let stop = true;
+
+    for (let k in this.defs) {
+      let v = this.defs[k];
+
+      if (v === null || v === undefined) {
+        continue;
+      }
+
+      v = v.map(t => t.value).join("");
+
+      let oldl = l;
+
+      l = l.replace(getDefRe(k), v);
+
+      if (oldl !== l) {
+        stop = false;
+      }
+    }
+
+    if (!stop && depth < 100) {
+      this.doMacroReplace(l, depth+1);
+    }
+
+    return l;
   }
 
   process(code) {
@@ -662,6 +705,7 @@ export class Preprocessor {
 
       if (!l.trim().startsWith("#")) {
         if (!this.excluded) {
+          l = this.doMacroReplace(l);
           out(l + "\n");
         }
         continue;

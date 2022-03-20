@@ -146,24 +146,35 @@ export class Workspace extends simple.Editor {
 
   makeMesh(gpu) {
     let mesh = new GPUMesh();
-    mesh.length = 3;
+    mesh.length = 6;
 
     mesh.addLayer("co", "float", 2, [
-      0,0, 0,1, 1,1
+      0, 0, 0, 1, 1, 1,
+      0, 0, 1, 1, 1, 0
     ]);
     mesh.addLayer("uv", "float", 2, [
-      0,0, 0,1, 1,1
+      0, 0, 0, 1, 1, 1,
+      0, 0, 1, 1, 1, 0
     ]);
 
     this.mesh = mesh;
     mesh.checkReady(gpu, Shaders.BasicShader);
   }
 
-  drawGPU(gpu) {
+  drawGPUPre(gpu) {
     if (!this.mesh) {
       console.log("Creating mesh");
       this.makeMesh(gpu);
     }
+
+    this.mesh.drawPre(gpu, Shaders.BasicShader, {
+      color: [0, 0, 1, 1],
+      color0: [0.5, 0.5, 0.5, 1],
+      color2: [0.5, 1.0, 0.5, 1],
+    });
+  }
+
+  drawGPU(gpu) {
 
     let mesh = this.mesh;
     if (mesh.checkReady(gpu, Shaders.BasicShader)) {
