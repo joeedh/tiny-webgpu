@@ -144,7 +144,7 @@ export class Workspace extends simple.Editor {
     return [this.keymap, this.toolmode.keymap];
   }
 
-  async drawGPU(gpu) {
+  makeMesh(gpu) {
     let mesh = new GPUMesh();
     mesh.length = 3;
 
@@ -155,7 +155,20 @@ export class Workspace extends simple.Editor {
       0,0, 0,1, 1,1
     ]);
 
-    await mesh.draw(gpu, Shaders.BasicShader);
+    this.mesh = mesh;
+    mesh.checkReady(gpu, Shaders.BasicShader);
+  }
+
+  drawGPU(gpu) {
+    if (!this.mesh) {
+      console.log("Creating mesh");
+      this.makeMesh(gpu);
+    }
+
+    let mesh = this.mesh;
+    if (mesh.checkReady(gpu, Shaders.BasicShader)) {
+      mesh.draw(gpu, Shaders.BasicShader);
+    }
   }
 
   init() {
@@ -211,7 +224,6 @@ export class Workspace extends simple.Editor {
     }
 
     this.g.clearRect(0, 0, canvas.width, canvas.height);
-    console.log("draw!");
 
     this.toolmode.draw(this.ctx, this.canvas, this.g);
   }

@@ -11,20 +11,23 @@ export const Fragments = {
 
 export const BasicShader = {
   decl      : `
+struct VertexInputs {
+   @location(0) co: vec2<f32>;
+   @location(1) uv: vec4<f32>;
+}
+
 #if 1
 #endif
-    var<private> pos : array<vec2<f32>, 3> = array<vec2<f32>, 3>(
-        vec2(-1.0, -1.0), vec2(-1.0, 3.0), vec2(3.0, -1.0));
   `,
   vertex    : `
-    fn vertexMain(@builtin(vertex_index) vertexIndex : u32) -> @builtin(position) vec4<f32> {
-        return vec4(pos[vertexIndex], 1.0, 1.0);
+    fn vertexMain(vinput: VertexInputs) -> @builtin(position) vec4<f32> {
+        return vec4(vinput.co*2.0 - 1.0, 0.0, 1.0);
     }
   `,
   fragment  : `
     fn fragmentMain() -> @location(0) vec4<f32> {
 #ifndef RED
-        return vec4(1.0, 1.0, 0.5, 1.0);
+        return vec4(1.0, 1.0, 0.0, 1.0);
 #else
         return vec4(1.0, 0.0, 0.0, 1.0);
 #endif

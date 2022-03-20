@@ -16,7 +16,7 @@ import '../webgpu/preprocessor.js';
 export const STARTUP_FILE_KEY = "_startup_file_webgpu";
 
 export const Properties = {
-  steps  : {type: "int", value: 1, min: 0, max: 10, slideSpeed : 5},
+  steps  : {type: "int", value: 1, min: 0, max: 10, slideSpeed: 5},
   boolVal: {type: "bool", value: true},
 };
 
@@ -140,7 +140,7 @@ export class App extends simple.AppState {
   draw() {
     if (this.gpuReady) {
       this.gpu.beginFrame({
-        loadColor : [1, 0.8, 0.7, 1]
+        loadColor: [1, 0.8, 0.7, 1]
       });
     }
 
@@ -179,16 +179,63 @@ export function start() {
     window.redraw_all();
   })
 
-  let animreq = undefined;
+  let animreq;
+
+  function dodraw() {
+    if (!window._appstate) {
+      return;
+    }
+
+    let gpu = !_appstate.gpuReady ? undefined : _appstate.gpu;
+
+    if (gpu) {
+      gpu.beginFrame({loadColor: [1, 0.8, 0.7, 1]});
+    }
+
+    let screen = _appstate.screen;
+    for (let sarea of screen.sareas) {
+      if (sarea.area.draw) {
+        try {
+          sarea.area.draw();
+        } catch (error) {
+          util.print_stack(error);
+        }
+      }
+
+      if (gpu && sarea.area.drawGPU) {
+        try {
+          sarea.area.drawGPU(gpu);
+        } catch (error) {
+          console.error("ERROR", error);
+          util.print_stack(error);
+        }
+      }
+    }
+
+    if (gpu) {
+      gpu.endFrame();
+
+      console.log("END", gpu.commandEncoder, gpu.pass);
+    }
+  };
 
   function f() {
-    animreq = undefined;
-
-    _appstate.draw();
+    if (1) {
+      animreq = undefined;
+      dodraw();
+    } else {
+      dodraw().then(() => {
+        animreq = undefined;
+      }).catch((error) => {
+        console.error(error);
+        animreq = undefined;
+      });
+    }
   }
 
+
   window.redraw_all = function () {
-    if (animreq) {
+    if (animreq !== undefined) {
       return;
     }
 

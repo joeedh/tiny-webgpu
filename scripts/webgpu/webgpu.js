@@ -1,15 +1,14 @@
-import {Vector2, Vector3, util, nstructjs, Vector4, Matrix4, Quat} from '../path.ux/pathux.js';
+import {
+  Vector2, Vector3, util, nstructjs,
+  Vector4, Matrix4, Quat
+} from '../path.ux/pathux.js';
 import {preprocess} from './preprocessor.js';
+import {
+  sizemap, gpuBindIdgen, TypeNameMap,
+  TypeSizeMap, WebGPUArgs
+} from './webgpu_base.js';
 
-export class WebGPUArgs {
-  constructor(args = {}) {
-    this.powerPreference = "high-performance";
-
-    for (let k in args) {
-      this[k] = args[k];
-    }
-  }
-}
+export {ShaderProgram, ShaderProgramBase} from './shaderprogram.js';
 
 export function initWebGPU(args = new WebGPUArgs(), canvas = undefined) {
   args = new WebGPUArgs(args);
@@ -49,479 +48,60 @@ export function initWebGPU(args = new WebGPUArgs(), canvas = undefined) {
   }).catch(error => console.error(error));
 }
 
-const BindBlock = Symbol("BindBlock");
-const BlockMap = Symbol("BlockMap");
-
-let gpuBindIdgen = 0;
-
-let sizemap = {
-  "float": 1,
-  "vec2" : 2,
-  "vec3" : 3,
-  "vec4" : 4,
-  "mat4" : 16,
-  "mat3" : 9,
-  "int"  : 1
-};
-
-export class UniformsBlock {
-  constructor(def) {
-    this.label = def.label || "Shader Uniform Bind Group";
-    this.bindBlocks = [];
-    this.visibility = undefined;
-
-    this.tempBuffer = undefined;
-
-    this.lookup = {};
-
-    let block = {};
-
-    this.blockSize = 0;
-
-    for (let k in def) {
-      if (typeof k === "symbol") {
-        continue;
-      }
-
-      let v = def[k];
-
-      if (typeof v === "object" && v.constructor === Object) {
-        this.bindBlocks.push(v);
-      } else {
-        block[k] = def[k];
-      }
-
-      if (!block.label) {
-        block.label = k;
-      }
-    }
-
-    if (Reflect.ownKeys(block).length > 0) {
-      this.bindBlocks.push(block);
-    }
-  }
-
-  async initBindBlocks(gpu) {
-    this.blockSize = 0;
-
-    for (let block of this.bindBlocks) {
-      if (block[BindBlock]) {
-        continue;
-      }
-
-      let layout = {
-        binding   : gpuBindIdgen++,
-        visibility: block.visibility ?? (ShaderProgram.VERTEX | ShaderProgram.FRAGMENT),
-        buffer    : {
-          hasDynamicOffset: false, //false is default
-          type            : "uniform",
-          label           : block.label,
-        }
-      };
-
-      let map = block[BlockMap] = {};
-      let cur = 0;
-
-      for (let k in block) {
-        if (typeof k === "symbol" || k === "label") {
-          continue;
-        }
-
-        let v = block[k];
-
-        if (!(v instanceof Texture)) {
-          if (typeof v === "string" && v in sizemap) {
-            v = new Array(sizemap[v]);
-            v.fill(0);
-          } else if (v instanceof Matrix4) {
-            v = v.toArray();
-          }
-
-          if (Array.isArray(v)) {
-            map[k] = {
-              offset: cur*4,
-              size  : v.length
-            };
-
-            cur += v.length;
-          }
-        }
-      }
-
-      layout.buffer.minBindingSize = cur*4;
-
-      block[BindBlock] = {
-        layout,
-        bind: gpu.device.createBindGroupLayout({
-          entries: [layout]
-        }),
-        size: cur*4
-      }
-
-      this.blockSize += cur*4;
-
-      let align = gpu.device.limits.minUniformBufferOffsetAlignment;
-
-      let rem = this.blockSize%align;
-      if (rem) {
-        this.blockSize += align - rem;
-      }
-
-
-      console.log("BIND BLOCK", block[BindBlock]);
-    }
-  }
-
-  async initBindGroups(gpu, attrs) {
-    let align = gpu.device.limits.minUniformBufferOffsetAlignment;
-
-    let entries = [];
-    let layout = {
-      label  : this.label,
-      entries: [],
-    };
-
-    for (let k in attrs) {
-      let entry = {
-        label     : this.label + ":" + k,
-        binding   : gpuBindIdgen++,
-        visibility: (ShaderProgram.VERTEX | ShaderProgram.FRAGMENT),
-        buffer    : {
-          label: this.label + ":attr:" + k,
-          type : "vertex"
-        }
-      }
-    }
-    let offset = 0;
-
-    console.log("Block Size:", this.blockSize);
-
-    let buffer = this.buffer = gpu.device.createBuffer({
-      label           : "Shader Uniform Block",
-      size            : this.blockSize,
-      mappedAtCreation: true,
-      usage           : GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-
-    this.tempBuffer = gpu.device.createBuffer({
-      label           : "Shader Uniform Temp Block",
-      size            : this.blockSize,
-      mappedAtCreation: true,
-      usage           : GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC,
-    });
-
-    for (let block of this.bindBlocks) {
-      let bind = block[BindBlock];
-
-      let entry = {
-        binding : bind.layout.binding,
-        resource: {
-          buffer,
-          size: bind.size,
-          offset,
-        }
-      };
-
-      let map = block[BlockMap];
-      for (let k in map) {
-        this.lookup[k] = {
-          offset     : offset + map[k].offset,
-          size       : map[k].size,
-          cachedValue: new Array(map[k].size),
-          type       : "float",
-        };
-
-        this.lookup[k].cachedValue.fill(0);
-      }
-
-      console.log(bind);
-
-      layout.entries.push(bind.layout);
-      entries.push(entry);
-
-      offset += bind.size;
-
-      let rem = offset%align;
-
-      if (rem) {
-        offset += align - rem;
-      }
-    }
-
-    layout = this.bindGroupLayout = gpu.device.createBindGroupLayout(layout);
-
-    console.log("LAYOUT", layout);
-
-    this.bindGroup = gpu.device.createBindGroup({
-      label: this.label,
-      layout,
-      entries
-    });
-
-    console.log(this.bindGroup, this.buffer);
-
-    for (let k in this.lookup) {
-      let v = this.lookup[k];
-
-      if (v.type === "float") {
-        v.value = this.buffer.getMappedRange(v.offset, v.size*4);
-        v.value = new Float32Array(v.value, 0, v.size);
-      }
-    }
-
-    console.log(this);
-  }
-
-  getProxy(ignoreErrors = false) {
-    let checkMapping = (key) => {
-      let v = this.lookup[key];
-      if (!v.value) {
-        v.value = this.tempBuffer.getMappedRange(v.offset, v.size*4);
-        v.value = new Float32Array(v.value, 0, v.size*4);
-      }
-    }
-
-    let tmp = [0];
-
-    return new Proxy(this.lookup, {
-      get(target, key, recv) {
-        if (!(key in target)) {
-          if (ignoreErrors) {
-            return;
-          } else {
-            throw new Error("Unknown uniform " + key);
-          }
-        }
-
-
-        checkMapping(key);
-        return target[key].cachedValue;
-      },
-      set(target, key, value, recv) {
-        if (!(key in target)) {
-          if (ignoreErrors) {
-            return;
-          } else {
-            throw new Error("Unknown uniform " + key);
-          }
-        }
-
-        if (typeof value === "number") {
-          tmp[0] = value;
-          value = tmp;
-        }
-
-        checkMapping(key);
-        target[key].cachedValue.set(value);
-        target[key].value.set(value);
-      },
-      ownKeys(target) {
-        return Object.keys(target);
-      }
-    });
-  }
-
-  bind() {
-    return this.tempBuffer.mapAsync(GPUMapMode.WRITE, 0, this.blockSize);
-  }
-
-  pushCopyCommand(gpu) {
-    if (gpu.commandEncoder) {
-      gpu.commandEncoder.copyBufferToBuffer(this.tempBuffer, 0, this.buffer, 0, this.blockSize);
-    }
-  }
-
-  async unmap(gpu) {
-    for (let k in this.lookup) {
-      let v = this.lookup[k];
-
-      v.value = undefined;
-    }
-
-    /* unmap buffer and send to GPU */
-    this.tempBuffer.unmap();
-  }
-}
-
-export class Texture {
-  constructor() {
-    this.gpu = undefined;
-    this.tex = undefined;
-  }
-}
-
-let shader_idgen = 0;
-let _temp_digest = new util.HashDigest();
-
-export class ShaderProgram {
-  constructor(sdef) {
-    this.program = undefined;
-    this.defines = {};
-    this.defKey = undefined;
-    this.defShaders = new Map();
-    this.sdef = sdef;
-    this.gpu = undefined;
-  }
-
-  get shaderModule() {
-    this.check(this.gpu);
-    return this.defShaders.get(this.defKey).shaderModule;
-  }
-
-  async getBaseShader(gpu) {
-    await this.check(gpu);
-
-    return this.defShaders.get(this.defKey);
-  }
-
-  async check(gpu) {
-    this.gpu = gpu;
-
-    let regen = !this.program;
-
-    let defkey = this.calcDefKey();
-    regen = regen || defkey !== this.defKey;
-
-    if (regen) {
-      await this.init(gpu);
-    }
-  }
-
-  async bind(gpu, uniforms) {
-    await this.check(gpu);
-
-    await this.defShaders.get(this.defKey).bind(gpu, uniforms);
-  }
-
-  calcDefKey(digest = _temp_digest.reset()) {
-    for (let k in this.defines) {
-      let v = this.defines[k];
-
-      digest.add(k);
-
-      if (v !== null) {
-        digest.add(v);
-      }
-    }
-
-    return digest.get();
-  }
-
-  async init(gpu) {
-    this.gpu = gpu;
-    this.defKey = this.calcDefKey();
-
-    if (this.defShaders.has(this.defKey)) {
-      return; //already have shader
-    }
-
-    let sdef = Object.assign({}, this.sdef);
-
-    let s = '';
-    for (let k in this.defines) {
-      let v = this.defines[k];
-
-      s += "#define " + this.defines[k];
-      if (v !== null) {
-        s += " " + v;
-      }
-
-      s += "\n";
-    }
-
-    sdef.decl = preprocess(s + (sdef.decl ?? ""));
-    sdef.vertex = preprocess(s + sdef.vertex);
-    sdef.fragment = preprocess(s + sdef.fragment);
-
-    let shader = new ShaderProgramBase(sdef, "Shader" + this.defKey);
-    await shader.init(gpu);
-
-    this.defShaders.set(this.defKey, shader);
-  }
-}
-
-export class ShaderProgramBase {
-  constructor(sdef = {}, label = "Shader") {
-    this.vertexSource = sdef.vertex;
-    this.id = "" + label + (shader_idgen++);
-    this.fragmentSource = sdef.fragment;
-    this.declSource = sdef.decl;
-    this.attributes = Object.assign({}, sdef.attributes);
-    this.uniformDef = {};
-    this.label = label + (shader_idgen++);
-    this.uniformBlock = new UniformsBlock(sdef.uniforms);
-
-    this.ready = false;
-  }
-
-  async bind(gpu, uniforms) {
-    if (!this.ready) {
-      await this.init(gpu);
-    }
-
-    await this.uniformBlock.bind();
-
-    for (let k in uniforms) {
-      //apply to uniforms Proxy
-      this.uniforms[k] = uniforms[k];
-    }
-
-    await this.uniformBlock.unmap();
-    this.uniformBlock.pushCopyCommand(gpu);
-  }
-
-  async init(gpu) {
-    /* initialize uniforms block */
-    await this.uniformBlock.initBindBlocks(gpu);
-    await this.uniformBlock.initBindGroups(gpu, this.attributes);
-
-    this.uniforms = this.uniformBlock.getProxy(false);
-    await this.uniformBlock.unmap();
-
-    this.pipelineLayout = gpu.device.createPipelineLayout({
-      bindGroupLayouts: [this.uniformBlock.bindGroupLayout]
-    });
-
-    let code = `
- ${this.declSource}      
- @stage(vertex)
- ${this.vertexSource}
- @stage(fragment)
- ${this.fragmentSource}
-      `.trim() + "\n";
-
-    this.shaderModule = gpu.device.createShaderModule({
-      label: this.label,
-      code,
-      hints: this.pipelineLayout,
-    });
-
-    let info = await this.shaderModule.compilationInfo();
-
-    console.log("INFO", info);
-    if (info.messages.length === 0) {
-      this.ready = true;
-    }
-
-    console.log("MOD", this.shaderModule);
-  }
-}
-
-ShaderProgram.VERTEX = 0x1;
-ShaderProgram.FRAGMENT = 0x2;
-ShaderProgram.COMPUTE = 0x4;
-
 export class GPUVertexBuffer {
-  constructor(type, elemSize) {
+  constructor(key, type, elemSize, elemBytes = 4) {
     this.type = type;
     this.elemSize = elemSize;
     this.size = 0;
     this.buf = undefined;
+    this.elemBytes = elemBytes;
+    this.typeName = "float32";
+    this.bindLoc = -1;
+    this.data = undefined;
+    this.key = key;
+    this.ready = false;
   }
 
-  update(data) {
-    if (!this.buf || data.size !== this.size) {
+  async upload(gpu, data = this.data) {
+    let size = TypeSizeMap.get(data);
 
+    if (!size) {
+      data = new Float32Array(data);
+      size = 4;
+    }
+
+    this.data = data;
+    this.size = data.length/this.elemSize;
+
+    let cls = data.constructor;
+    this.elemBytes = size;
+    this.typeName = TypeNameMap.get(cls);
+
+    if (!this.buf || data.size !== this.size) {
+      if (this.buf) {
+        this.buf.destroy();
+      }
+
+      this.buf = gpu.device.createBuffer({
+        label           : "Vertex:" + this.key,
+        size            : data.byteLength,
+        usage           : GPUBufferUsage.VERTEX,
+        mappedAtCreation: true
+      });
+
+      let view = new cls(this.buf.getMappedRange(0, data.byteLength));
+      view.set(data);
+      this.buf.unmap();
+
+      this.ready = true;
+    } else {
+      await this.buf.mapAsync(GPUMapMode.WRITE);
+
+      let view = new cls(this.buf.getMappedRange(0, data.byteLength));
+      view.set(data);
+      this.buf.unmap();
+
+      this.ready = true;
     }
   }
 }
@@ -546,11 +126,21 @@ export class GPUMesh {
     this._uniforms = v;
   }
 
+  get isReady() {
+    for (let attr of this.attrs.values()) {
+      if (!attr.ready) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   get(key, type, elemSize) {
     let attr = this.attrs.get(key);
 
     if (!attr) {
-      attr = new GPUVertexBuffer(type, elemSize);
+      attr = new GPUVertexBuffer(key, type, elemSize);
 
       this.attrs.set(key, attr);
     }
@@ -560,9 +150,18 @@ export class GPUMesh {
 
   addLayer(key, type, elemSize, data) {
     let attr = this.get(key, type, elemSize);
-    attr.update(data);
+    attr.data = data;
 
     return attr;
+  }
+
+  async readyWait(gpu) {
+    for (let [key, attr] of this.attrs) {
+      if (!attr.ready) {
+        await attr.upload(gpu);
+      }
+    }
+
   }
 
   calcUniformsKey(uniforms = this.uniforms, digest = new util.HashDigest()) {
@@ -589,33 +188,112 @@ export class GPUMesh {
     return digest.get();
   }
 
-  async draw(gpu, shader, uniforms, pass = gpu.pass) {
-    let ukey;
+  getBuffers(shader) {
+    let ret = [];
+    let i = 0;
 
-    if (!uniforms) {
-      if (this.uniformsUpdate) {
-        this.uniformsUpdate = false;
-        ukey = this.uniformsKey = this.calcUniformsKey(this.uniforms);
-      } else {
-        ukey = this.uniformsKey;
+    for (let [key, attr] of this.attrs) {
+      attr.bindLoc = shader.attrLoc(key);
+
+      let attr2 = {
+        arrayStride: attr.elemSize*attr.elemBytes,
+        attributes : [
+          {
+            shaderLocation: attr.bindLoc,
+            offset        : 0,
+            format        : attr.typeName + "x" + attr.elemSize
+          }
+        ]
       }
-    } else {
-      uniforms = Object.assign({}, this.uniforms, uniforms);
-      ukey = this.calcUniformsKey(uniforms);
+
+      ret.push(attr2);
     }
 
-    let key = "" + (await shader.getBaseShader(gpu)).id;
+    return ret;
+  }
+
+  checkReady(gpu, shader, uniforms, constants) {
+    let ready = this.ready;
+
+    if (!ready && !this.waiting) {
+      this.waiting = true;
+
+      this.setup(gpu, shader, uniforms, constants).then(() => {
+        window.redraw_all();
+      });
+    }
+
+    return ready;
+  }
+
+  _shaderkey(shader) {
+    shader = shader.getBaseShaderSync();
+    return "shader" + shader.id;
+  }
+
+  draw(gpu, shader) {
+    let pass = gpu.pass;
+    let pipeline = this.pipelines.get(this._shaderkey(shader));
+    
+    shader = shader.getBaseShaderSync();
+
+    console.log("Draw!", pipeline);
+
+    pass.setPipeline(pipeline.pipeline);
+    pass.setBindGroup(0, shader.uniformBlock.bindGroup);
+
+    for (let [key, attr] of this.attrs) {
+      pass.setVertexBuffer(attr.bindLoc, attr.buf);
+      console.log("BUF", attr);
+    }
+
+    let ret = pass.draw(this.length);
+    console.log("DRAW", ret);
+
+  }
+
+  async setup(gpu, shader, uniforms, constants = {}) {
+    let ukey;
+
+    this.ready = false;
+    this.waiting = true;
+
+    await this.readyWait(gpu);
+
+    if (0) {
+      if (!uniforms) {
+        if (this.uniformsUpdate) {
+          this.uniformsUpdate = false;
+          ukey = this.uniformsKey = this.calcUniformsKey(this.uniforms);
+        } else {
+          ukey = this.uniformsKey;
+        }
+      } else {
+        uniforms = Object.assign({}, this.uniforms, uniforms);
+        ukey = this.calcUniformsKey(uniforms);
+      }
+    }
+
+    console.log("PASS", gpu.pass);
+
+    shader = await shader.getBaseShader(gpu);
+    let key = "shader" + shader.id;
+
+    console.log(shader);
 
     let pipeline = this.pipelines.get(key);
     if (!pipeline) {
-      pipeline = await gpu.createRenderPipeline(shader, shader, this.primitiveType);
+      let buffers = this.getBuffers(shader);
+
+      console.log("BUFFERS", buffers);
+
+      pipeline = await gpu.createRenderPipeline(shader, shader, this.primitiveType, uniforms, constants, buffers);
       this.pipelines.set(key, pipeline);
     }
 
-    await pipeline.bind(gpu, uniforms)
-
-    pass.setPipeline(pipeline.pipeline);
-    console.log("DRAW", pass.draw(this.length));
+    this.waiting = false;
+    this.ready = true;
+    console.log("READY", this.ready);
   }
 
   destroy() {
@@ -626,11 +304,13 @@ export class GPUMesh {
 }
 
 export class RenderPipeline {
-  constructor(pipeline, vshader, fshader, primitiveType) {
+  constructor(pipeline, vshader, fshader, primitiveType, constants, buffers) {
     this.pipeline = pipeline;
     this.vshader = vshader;
     this.fshader = fshader;
     this.primitiveType = primitiveType;
+    this.constants = constants;
+    this.buffers = buffers;
   }
 
   async bind(gpu, uniforms) {
@@ -673,19 +353,22 @@ export class WebGPUContext {
         format: this.context.getPreferredFormat(this.adapter),
         size  : [this.canvas.width, this.canvas.height],
       });
-
-      this.passView = this.context.getCurrentTexture().createView();
     }
   }
 
   beginFrame(args) {
+    if (this.pass) {
+      console.error("last frame wasn't finished");
+    }
+    this.updateSize();
+
+    this.passView = this.context.getCurrentTexture().createView();
+
     this.commandEncoder = this.device.createCommandEncoder();
     this.pass = this.beginPass(args);
   }
 
   endFrame() {
-    this.updateSize();
-
     this.pass.endPass();
     this.device.queue.submit([this.commandEncoder.finish()]);
 
@@ -713,7 +396,7 @@ export class WebGPUContext {
     pass.endPass();
   }
 
-  async createRenderPipeline(vshader, fshader, primitiveType, uniforms = {}) {
+  async createRenderPipeline(vshader, fshader, primitiveType, uniforms = {}, constants = {}, vbuffers = []) {
     await vshader.bind(this, uniforms);
 
     if (fshader !== vshader) {
@@ -726,12 +409,13 @@ export class WebGPUContext {
       vertex: {
         module    : vshader.shaderModule,
         entryPoint: "vertexMain",
+        buffers   : vbuffers,
       },
 
       fragment : {
         module    : fshader.shaderModule,
         entryPoint: "fragmentMain",
-        constants : {},
+        constants,
         targets   : [
           {format: this.context.getPreferredFormat(this.adapter)}
         ]
@@ -741,7 +425,7 @@ export class WebGPUContext {
       }
     });
 
-    return new RenderPipeline(pipeline, vshader, fshader, primitiveType);
+    return new RenderPipeline(pipeline, vshader, fshader, primitiveType, constants, vbuffers);
   }
 
 }
