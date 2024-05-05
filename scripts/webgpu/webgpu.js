@@ -354,7 +354,7 @@ export class WebGPUContext {
 
       this.context.configure({
         device: this.device,
-        format: this.context.getPreferredFormat(this.adapter),
+        format: navigator.gpu.getPreferredCanvasFormat(),
         size  : [this.canvas.width, this.canvas.height],
       });
     }
