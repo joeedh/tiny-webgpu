@@ -12,6 +12,8 @@ const basedir = process.cwd();
 
 let mimemap = {
   ".js" : "application/javascript",
+  ".cjs" : "application/javascript",
+  ".mjs" : "application/javascript",
   ".json" : "text/json",
   ".html" : "text/html",
   ".png" : "image/png",
